@@ -83,7 +83,7 @@ static struct msm_mpdec_tuners {
 	.scroff_single_core = true,
 	.idle_freq = MSM_MPDEC_IDLE_FREQ,
 	.max_cpus = CONFIG_NR_CPUS,
-	.min_cpus = 2,
+	.min_cpus = 1,
 #ifdef CONFIG_MSM_MPDEC_INPUTBOOST_CPUMIN
 	.boost_enabled = true,
 	.boost_time = MSM_MPDEC_BOOSTTIME,
@@ -1149,7 +1149,7 @@ static int __init msm_mpdec_init(void) {
 
 	msm_mpdec_workq = alloc_workqueue(
 						"mpdec",
-						WQ_UNBOUND | WQ_RESCUER | WQ_FREEZABLE,
+						WQ_UNBOUND | WQ_RESCUER | WQ_FREEZABLE | WQ_HIGHPRI,
 						1
 						);
 	if (!msm_mpdec_workq)
