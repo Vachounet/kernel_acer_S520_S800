@@ -41,43 +41,6 @@ static struct rw_semaphore namespace_sem;
 struct kobject *fs_kobj;
 EXPORT_SYMBOL_GPL(fs_kobj);
 
-#ifdef CONFIG_SECURE_MOUNT
-#define CHK_ERR(x) \
-{ \
-	if (x) \
-	{ \
-		pr_err("%s: sysfs_create_file fail(%d)!", __func__, x); \
-	} \
-}
-
-static char secure_mount_mode[1] = {0};
-static ssize_t secure_mount_mode_read(struct kobject *kobj, struct kobj_attribute *attr, char *buf);
-static ssize_t secure_mount_mode_write(struct kobject *kobj, struct kobj_attribute *attr,
-	const char *buf, size_t count);
-static struct kobj_attribute secure_mount_mode_attr =
-	__ATTR(secure_mount_mode, 0660, secure_mount_mode_read, secure_mount_mode_write);
-
-static ssize_t secure_mount_mode_read(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
-{
-	if (!buf)
-		return -EINVAL;
-	memcpy(buf, secure_mount_mode, sizeof(secure_mount_mode));
-	return sizeof(secure_mount_mode);
-}
-
-static ssize_t secure_mount_mode_write(struct kobject *kobj, struct kobj_attribute *attr,
-	const char *buf, size_t count)
-{
-	if (secure_mount_mode[0] == 0 && buf)
-		secure_mount_mode[0] = *buf;
-	else {
-		printk("Failed to write secure_mount_mode \n");
-		return -EINVAL;
-	}
-	return sizeof(secure_mount_mode);
-}
-#endif
-
 /*
  * vfsmount lock may be taken for read to prevent changes to the
  * vfsmount hash, ie. during mountpoint lookups or walking back
@@ -2212,21 +2175,10 @@ long do_mount(char *dev_name, char *dir_name, char *type_page,
 		   MS_NOATIME | MS_NODIRATIME | MS_RELATIME| MS_KERNMOUNT |
 		   MS_STRICTATIME);
 
-	if (flags & MS_REMOUNT) {
-#ifdef CONFIG_SECURE_MOUNT
-		char *dir = "system";
-		if ((strstr(dir_name,dir)) && !(flags & MS_RDONLY)
-			&& (secure_mount_mode[0] == '1')) {
-			retval = -1;
-			printk("Operation not permitted or illegal root \n");
-		} else
-			retval = do_remount(&path, flags & ~MS_REMOUNT, mnt_flags,
-					    data_page);
-#else
+	if (flags & MS_REMOUNT)
 		retval = do_remount(&path, flags & ~MS_REMOUNT, mnt_flags,
 				    data_page);
-#endif
-	} else if (flags & MS_BIND)
+	else if (flags & MS_BIND)
 		retval = do_loopback(&path, dev_name, flags & MS_REC);
 	else if (flags & (MS_SHARED | MS_PRIVATE | MS_SLAVE | MS_UNBINDABLE))
 		retval = do_change_type(&path, flags);
@@ -2635,9 +2587,6 @@ void __init mnt_init(void)
 		printk(KERN_WARNING "%s: kobj create error\n", __func__);
 	init_rootfs();
 	init_mount_tree();
-#ifdef CONFIG_SECURE_MOUNT
-	CHK_ERR(sysfs_create_file(fs_kobj, &secure_mount_mode_attr.attr));
-#endif
 }
 
 void put_mnt_ns(struct mnt_namespace *ns)

@@ -44,9 +44,6 @@ static irqreturn_t pwrkey_press_irq(int irq, void *_pwrkey)
 {
 	struct pmic8xxx_pwrkey *pwrkey = _pwrkey;
 
-#ifdef CONFIG_ARCH_ACER_MSM8974
-	pr_info("%s: button->code = %d, state = 1\n", __func__, KEY_POWER);
-#endif
 	if (pwrkey->press == true) {
 		pwrkey->press = false;
 		return IRQ_HANDLED;
@@ -64,9 +61,6 @@ static irqreturn_t pwrkey_release_irq(int irq, void *_pwrkey)
 {
 	struct pmic8xxx_pwrkey *pwrkey = _pwrkey;
 
-#ifdef CONFIG_ARCH_ACER_MSM8974
-	pr_info("%s: button->code = %d, state = 0\n", __func__, KEY_POWER);
-#endif
 	if (pwrkey->press == false) {
 		input_report_key(pwrkey->pwr, KEY_POWER, 1);
 		input_sync(pwrkey->pwr);
