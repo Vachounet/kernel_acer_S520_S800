@@ -143,10 +143,6 @@ static void print_rq(struct seq_file *m, struct rq *rq, int rq_cpu)
 {
 	struct task_struct *g, *p;
 	unsigned long flags;
-#ifdef CONFIG_ARCH_ACER_MSM8974
-	unsigned int count = 0;
-	bool surface_hang = false;
-#endif
 
 	SEQ_printf(m,
 	"\nrunnable tasks:\n"
@@ -162,22 +158,9 @@ static void print_rq(struct seq_file *m, struct rq *rq, int rq_cpu)
 			continue;
 
 		print_task(m, rq, p);
-
-#ifdef CONFIG_ARCH_ACER_MSM8974
-		count++;
-		if (p->comm && !strcmp(p->comm, "SurfaceFlinger"))
-			surface_hang = true;
-#endif
 	} while_each_thread(g, p);
 
 	read_unlock_irqrestore(&tasklist_lock, flags);
-
-#ifdef CONFIG_ARCH_ACER_MSM8974
-	if (count == 1 && surface_hang) {
-		pr_err("%s::::SurfaceFlinger hang!! Force kernel panic!!", __func__);
-		BUG_ON(1);
-	}
-#endif
 }
 
 void print_cfs_rq(struct seq_file *m, int cpu, struct cfs_rq *cfs_rq)
