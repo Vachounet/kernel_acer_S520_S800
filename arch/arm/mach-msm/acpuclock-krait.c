@@ -56,10 +56,7 @@ extern int no_touch_event(void);
 extern int is_woken_by_pwr_key(void);
 extern int is_ignore_freq_limit(void);
 static int run_queue_avg[RUN_QUEUE_MAX];
-static int r_idx;
 static int battery_to_cpu_low_power_mode;
-static struct delayed_work loading_wq;
-static struct mutex work_queue_mutex;
 #endif
 
 /* MUX source selects. */
@@ -489,18 +486,6 @@ void battery_set_cpu_low_power_mode(int enabled)
 }
 EXPORT_SYMBOL(battery_set_cpu_low_power_mode);
 
-static int cal_run_queue_average(void)
-{
-	int i, sum;
-
-	for(i = 0, sum = 0; i < RUN_QUEUE_MAX; i++)
-		sum += run_queue_avg[i];
-	return sum / RUN_QUEUE_MAX;
-}
-
-static void cal_system_loading(struct work_struct *work)
-{
-}
 #endif
 
 static DEFINE_MUTEX(l2_regulator_lock);
