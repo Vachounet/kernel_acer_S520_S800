@@ -77,8 +77,12 @@ static unsigned long acpuclk_krait_get_rate(int cpu)
 	return drv.scalable[cpu].cur_speed->khz;
 }
 
-/* Select a source on the primary MUX. */
-static void set_pri_clk_src(struct scalable *sc, u32 pri_src_sel)
+struct set_clk_src_args {
+	struct scalable *sc;
+	u32 src_sel;
+};
+
+static void __set_pri_clk_src(struct scalable *sc, u32 pri_src_sel)
 {
 	u32 regval;
 
@@ -93,6 +97,27 @@ static void set_pri_clk_src(struct scalable *sc, u32 pri_src_sel)
 	/* Wait for switch to complete. */
 	mb();
 	udelay(1);
+}
+
+static void __set_cpu_pri_clk_src(void *data)
+{
+	struct set_clk_src_args *args = data;
+	__set_pri_clk_src(args->sc, args->src_sel);
+}
+
+/* Select a source on the primary MUX. */
+static void set_pri_clk_src(struct scalable *sc, u32 pri_src_sel)
+{
+	int cpu = sc - drv.scalable;
+	if (sc != &drv.scalable[L2] && cpu_online(cpu)) {
+		struct set_clk_src_args args = {
+			.sc = sc,
+			.src_sel = pri_src_sel,
+		};
+		smp_call_function_single(cpu, __set_cpu_pri_clk_src, &args, 1);
+	} else {
+		__set_pri_clk_src(sc, pri_src_sel);
+	}
 }
 
 /* Select a source on the secondary MUX. */
@@ -459,7 +484,7 @@ static int calculate_vdd_core(const struct acpu_level *tgt)
 //
 void battery_set_cpu_low_power_mode(int enabled)
 {
-	battery_to_cpu_low_power_mode = enabled;
+	battery_to_cpu_low_power_mode = 0;
 	pr_info("[%s] set battery_to_cpu_low_power_mode=[%d]\r\n", __func__, enabled);
 }
 EXPORT_SYMBOL(battery_set_cpu_low_power_mode);
@@ -475,14 +500,6 @@ static int cal_run_queue_average(void)
 
 static void cal_system_loading(struct work_struct *work)
 {
-	run_queue_avg[r_idx++] = acer_show_run_queue_avg();
-	r_idx = r_idx % RUN_QUEUE_MAX;
-
-	if ((battery_to_cpu_low_power_mode == 0 && get_cpu_power_mode() == 2) || get_cpu_power_mode() == 0)
-		goto exit1;
-
-exit1:
-	schedule_delayed_work(&loading_wq, msecs_to_jiffies(SYSTEM_LOADING_POLLING_TIME));
 }
 #endif
 
@@ -538,35 +555,9 @@ static int acpuclk_krait_set_rate(int cpu, unsigned long rate,
 	struct vdd_data vdd_data;
 	bool skip_regulators;
 	int rc = 0;
-#if defined(CONFIG_ARCH_ACER_MSM8974)
-	unsigned long long t;
-	unsigned long nanosec_rem;
-#endif
 
 	if (cpu > num_possible_cpus())
 		return -EINVAL;
-
-#if defined(CONFIG_ARCH_ACER_MSM8974)
-	// if uptime < 5mins, we allow all apps to access network
-	t = cpu_clock(0);
-	nanosec_rem = do_div(t, 1000000000);
-	if ((reason == SETRATE_CPUFREQ || reason == SETRATE_HOTPLUG) && t >= DELAY_180_SECS) {
-		if ((battery_to_cpu_low_power_mode == 0 && get_cpu_power_mode() == 2) ||
-			get_cpu_power_mode() == 0)
-			;
-		else if (!is_ignore_freq_limit()) {
-			if (rate >= ACPU_LIMITED_FREQ) {
-				if (no_touch_event())
-					rate = ACPU_NO_TOUCH_FREQ;
-				else if (/*cpu_online(1) == 0 ||*/ cal_run_queue_average() <= RUN_QUEUE_THRESHOLD) {
-					rate = ACPU_LIMITED_FREQ;
-				}
-			}
-			if (kernel_is_in_earlysuspend() && !is_woken_by_pwr_key())
-				rate = ACPU_EARLYSUSPEND_FREQ;
-		}
-	}
-#endif
 
 	if (reason == SETRATE_CPUFREQ || reason == SETRATE_HOTPLUG)
 		mutex_lock(&driver_lock);
@@ -817,15 +808,22 @@ static int __cpuinit regulator_init(struct scalable *sc,
 	}
 
 	/*
-	 * Increment the L2 HFPLL regulator refcount if _this_ CPU's frequency
-	 * requires a corresponding target L2 frequency that needs the L2 to
-	 * run off of an HFPLL.
+	 * Vote for the L2 HFPLL regulators if _this_ CPU's frequency requires
+	 * a corresponding target L2 frequency that needs the L2 an HFPLL.
 	 */
-	if (drv.l2_freq_tbl[acpu_level->l2_level].speed.src == HFPLL)
-		l2_vreg_count++;
+	if (drv.l2_freq_tbl[acpu_level->l2_level].speed.src == HFPLL) {
+		ret = enable_l2_regulators();
+		if (ret) {
+			dev_err(drv.dev, "enable_l2_regulators() failed (%d)\n",
+				ret);
+			goto err_l2_regs;
+		}
+	}
 
 	return 0;
 
+err_l2_regs:
+	regulator_disable(sc->vreg[VREG_CORE].reg);
 err_core_conf:
 	regulator_put(sc->vreg[VREG_CORE].reg);
 err_core_get:
@@ -1160,11 +1158,7 @@ static const int __init krait_needs_vmin(void)
 	case 0x511F04D0: /* KR28M2A20 */
 	case 0x511F04D1: /* KR28M2A21 */
 	case 0x510F06F0: /* KR28M4A10 */
-#if defined(CONFIG_ARCH_ACER_MSM8974)
-		return 0;
-#else
 		return 1;
-#endif
 	default:
 		return 0;
 	};
@@ -1264,11 +1258,7 @@ static struct pvs_table * __init select_freq_plan(
 //
 void acer_set_cpu_freq_table(int type)
 {
-	if (type == 1) {
-		if (drv.acpu_freq_tbl) {
-			memcpy(drv.acpu_freq_tbl, drv.acpu_freq_pvs0_tbl, drv.acpu_freq_pvs0_tbl_size);
-		}
-	}
+
 }
 EXPORT_SYMBOL(acer_set_cpu_freq_table);
 #endif
@@ -1305,13 +1295,6 @@ static void __init drv_data_init(struct device *dev,
 	drv.acpu_freq_tbl = kmemdup(pvs->table, pvs->size, GFP_KERNEL);
 	BUG_ON(!drv.acpu_freq_tbl);
 	drv.boost_uv = pvs->boost_uv;
-
-#if defined(CONFIG_ARCH_ACER_MSM8974)
-	drv.acpu_freq_pvs0_tbl = kmemdup(params->pvs_tables[drv.speed_bin][PVS_SLOW].table,
-					params->pvs_tables[drv.speed_bin][PVS_SLOW].size, GFP_KERNEL);
-	drv.acpu_freq_pvs0_tbl_size = params->pvs_tables[drv.speed_bin][PVS_SLOW].size;
-	BUG_ON(!drv.acpu_freq_pvs0_tbl);
-#endif
 
 	acpuclk_krait_data.power_collapse_khz = params->stby_khz;
 	acpuclk_krait_data.wait_for_irq_khz = params->stby_khz;
@@ -1367,12 +1350,6 @@ int __init acpuclk_krait_init(struct device *dev,
 	dcvs_freq_init();
 	acpuclk_register(&acpuclk_krait_data);
 	register_hotcpu_notifier(&acpuclk_cpu_notifier);
-
-#if defined(CONFIG_ARCH_ACER_MSM8974)
-	mutex_init(&work_queue_mutex);
-	INIT_DELAYED_WORK(&loading_wq, cal_system_loading);
-	schedule_delayed_work(&loading_wq, msecs_to_jiffies(SYSTEM_LOADING_POLLING_TIME));
-#endif
 
 	acpuclk_krait_debug_init(&drv);
 
