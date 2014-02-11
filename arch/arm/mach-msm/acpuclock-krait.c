@@ -52,9 +52,6 @@
 extern unsigned int acer_show_run_queue_avg(void);
 extern int kernel_is_in_earlysuspend(void);
 extern int get_cpu_power_mode(void);  // 0)force disbled  1)force enabled  2)by battery
-extern int no_touch_event(void);
-extern int is_woken_by_pwr_key(void);
-extern int is_ignore_freq_limit(void);
 static int run_queue_avg[RUN_QUEUE_MAX];
 static int r_idx;
 static int battery_to_cpu_low_power_mode;
@@ -459,7 +456,7 @@ static int calculate_vdd_core(const struct acpu_level *tgt)
 //
 void battery_set_cpu_low_power_mode(int enabled)
 {
-	battery_to_cpu_low_power_mode = enabled;
+	battery_to_cpu_low_power_mode = 0;
 	pr_info("[%s] set battery_to_cpu_low_power_mode=[%d]\r\n", __func__, enabled);
 }
 EXPORT_SYMBOL(battery_set_cpu_low_power_mode);
@@ -538,35 +535,9 @@ static int acpuclk_krait_set_rate(int cpu, unsigned long rate,
 	struct vdd_data vdd_data;
 	bool skip_regulators;
 	int rc = 0;
-#if defined(CONFIG_ARCH_ACER_MSM8974)
-	unsigned long long t;
-	unsigned long nanosec_rem;
-#endif
 
 	if (cpu > num_possible_cpus())
 		return -EINVAL;
-
-#if defined(CONFIG_ARCH_ACER_MSM8974)
-	// if uptime < 5mins, we allow all apps to access network
-	t = cpu_clock(0);
-	nanosec_rem = do_div(t, 1000000000);
-	if ((reason == SETRATE_CPUFREQ || reason == SETRATE_HOTPLUG) && t >= DELAY_180_SECS) {
-		if ((battery_to_cpu_low_power_mode == 0 && get_cpu_power_mode() == 2) ||
-			get_cpu_power_mode() == 0)
-			;
-		else if (!is_ignore_freq_limit()) {
-			if (rate >= ACPU_LIMITED_FREQ) {
-				if (no_touch_event())
-					rate = ACPU_NO_TOUCH_FREQ;
-				else if (/*cpu_online(1) == 0 ||*/ cal_run_queue_average() <= RUN_QUEUE_THRESHOLD) {
-					rate = ACPU_LIMITED_FREQ;
-				}
-			}
-			if (kernel_is_in_earlysuspend() && !is_woken_by_pwr_key())
-				rate = ACPU_EARLYSUSPEND_FREQ;
-		}
-	}
-#endif
 
 	if (reason == SETRATE_CPUFREQ || reason == SETRATE_HOTPLUG)
 		mutex_lock(&driver_lock);

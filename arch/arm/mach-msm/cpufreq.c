@@ -442,33 +442,7 @@ static int __init msm_cpufreq_register(void)
 static int ignore_freq_limit;
 int is_ignore_freq_limit(void)
 {
-	return ignore_freq_limit;
-}
-void set_max_cpu_freq(void){
-	int ret;
-	int cpu, i, core = 1;
-	struct cpufreq_freqs freqs;
-
-	for_each_possible_cpu(cpu) {
-		per_cpu(cpufreq_suspend, cpu).device_suspended = 0;
-	}
-
-	for(i=0; i<core; i++){
-		if (cpu_online(i)) {
-			mutex_lock(&per_cpu(cpufreq_suspend, i).suspend_mutex);
-			ignore_freq_limit = 1;
-			freqs.old = acpuclk_get_rate(i);
-			freqs.new = 2150400;
-			freqs.cpu = i;
-			cpufreq_notify_transition(&freqs, CPUFREQ_PRECHANGE);
-			ret = acpuclk_set_rate(i, freqs.new, SETRATE_CPUFREQ);
-			if (!ret)
-				cpufreq_notify_transition(&freqs, CPUFREQ_POSTCHANGE);
-			printk(KERN_INFO "cpu%d, get freq to %lu\n", i, acpuclk_get_rate(i));
-			ignore_freq_limit = 0;
-			mutex_unlock(&per_cpu(cpufreq_suspend, i).suspend_mutex);
-		}
-	}
+	return 0;
 }
 #endif
 
