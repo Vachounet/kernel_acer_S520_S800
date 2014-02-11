@@ -18,14 +18,6 @@
 #include <linux/powersuspend.h>
 #endif
 
-#ifdef CONFIG_POWERSUSPEND
-#include <linux/powersuspend.h>
-#endif
-
-#ifdef CONFIG_POWERSUSPEND
-#include <linux/powersuspend.h>
-#endif
-
 #include "power.h"
 
 static suspend_state_t autosleep_state;
@@ -173,7 +165,7 @@ ssize_t force_cpu_low_power_store(struct kobject *kobj, struct kobj_attribute *a
 	if (buf != NULL) {
 		result = (int)buf[0] - (int)'0';
 		if (buf[0] > 0 && result >= 0 && result <= 2)
-			cpu_low_power_state = result;
+			cpu_low_power_state = 0;
 	}
 
 	return n;
@@ -226,8 +218,6 @@ int pm_autosleep_set_state(suspend_state_t state)
 		pkgl_clean_disconnect();
 		pr_info("[Suspend] Suspend state [%d]\r\n", autosleep_state);
 		early_suspend_is_working = 1;
-		if (cpu_low_power_state > 0)
-			dbs_set_min_freq();
 		queue_work(suspend_wakelock_monitored, &monitor_wakelock);
 #endif
 	} else {
@@ -235,8 +225,6 @@ int pm_autosleep_set_state(suspend_state_t state)
 		early_suspend_flag = 0;
 		pr_info("[Resume] Resume state [%d]\r\n", autosleep_state);
 		early_suspend_is_working = 0;
-		if (cpu_low_power_state > 0)
-			dbs_set_max_freq();
 #endif
 		pm_wakep_autosleep_enabled(false);
 #ifdef CONFIG_POWERSUSPEND

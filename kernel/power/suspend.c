@@ -251,9 +251,6 @@ static int suspend_enter(suspend_state_t state, bool *wakeup)
 	BUG_ON(irqs_disabled());
 
  Enable_cpus:
-#if defined(CONFIG_ARCH_ACER_MSM8974)
-	set_max_cpu_freq();
-#endif
 	enable_nonboot_cpus();
 
  Platform_wake:
