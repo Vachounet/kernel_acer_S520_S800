@@ -346,6 +346,16 @@ static struct vdd_rstr_enable vdd_rstr_en = {
 	.enabled = 1,
 };
 
+#ifdef CONFIG_MSM_MPDEC_INPUTBOOST_CPUMIN
+            if (cpu_online(cpu)) {
+                if (mutex_trylock(&per_cpu(msm_mpdec_cpudata, cpu).unboost_mutex)) {
+                    per_cpu(msm_mpdec_cpudata, cpu).is_boosted = false;
+                    update_cpu_min_freq(cpu_policy, cpu, per_cpu(msm_mpdec_cpudata, cpu).norm_min_freq);
+                    mutex_unlock(&per_cpu(msm_mpdec_cpudata, cpu).unboost_mutex);
+                }
+            }
+#endif
+
 static struct attribute *vdd_rstr_en_attribs[] = {
 	&vdd_rstr_en.ko_attr.attr,
 	NULL,
