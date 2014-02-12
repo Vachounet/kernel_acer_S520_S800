@@ -784,7 +784,6 @@ static bool is_battery_present(struct qpnp_bms_chip *chip)
 			get_battery_voltage(&volt);
 			/* Double check battery voltage */
 			if (volt/1000 > 2800) {
-				pr_info("vbat=%dmV\n", volt/1000);
 				return true;
 			}
 		}
@@ -2431,49 +2430,6 @@ static void calculate_soc_work(struct work_struct *work)
 				calculate_soc_delayed_work.work);
 	int soc = recalculate_soc(chip);
 
-#ifdef CONFIG_MACH_ACER_A12
-	int volt = 0, amp = 0;
-	struct qpnp_vadc_result batt_temp;
-	get_battery_voltage(&volt);
-	get_battery_current(chip, &amp);
-	qpnp_vadc_read(LR_MUX1_BATT_THERM, &batt_temp);
-	pr_info("SoC=%d%% Volt=%dmV Amp=%dmA Temp=%d\n",
-		soc, volt/1000, amp/1000, (int)batt_temp.physical);
-	/* Show CPU Temperature */
-	{
-		struct tsens_device tsens_dev;
-		unsigned long temp0 = 0, temp5 = 0, temp9 = 0;
-		tsens_dev.sensor_num = 0;
-		tsens_get_temp(&tsens_dev, &temp0);
-		tsens_dev.sensor_num = 5;
-		tsens_get_temp(&tsens_dev, &temp5);
-		tsens_dev.sensor_num = 9;
-		tsens_get_temp(&tsens_dev, &temp9);
-		pr_info("Sensor0(Main)=%d Sensor5(CPU0)=%d Sensor9(GPU)=%d\n",
-			(int)temp0, (int)temp5, (int)temp9);
-	}
-	/* Show CPU frequency */
-	{
-		struct cpufreq_policy cpu_policy;
-		int ret = 0;
-		ret = cpufreq_get_policy(&cpu_policy, 0);
-		if (ret >= 0)
-			pr_info("CPU0: cur=%dmHz max=%dmHz gov=%s\n",
-				cpu_policy.cur/1000, cpu_policy.max/1000, cpu_policy.governor->name);
-		ret = cpufreq_get_policy(&cpu_policy, 1);
-		if (ret >= 0)
-			pr_info("CPU1: cur=%dmHz max=%dmHz gov=%s\n",
-				cpu_policy.cur/1000, cpu_policy.max/1000, cpu_policy.governor->name);
-		ret = cpufreq_get_policy(&cpu_policy, 2);
-		if (ret >= 0)
-			pr_info("CPU2: cur=%dmHz max=%dmHz gov=%s\n",
-				cpu_policy.cur/1000, cpu_policy.max/1000, cpu_policy.governor->name);
-		ret = cpufreq_get_policy(&cpu_policy, 3);
-		if (ret >= 0)
-			pr_info("CPU3: cur=%dmHz max=%dmHz gov=%s\n",
-				cpu_policy.cur/1000, cpu_policy.max/1000, cpu_policy.governor->name);
-	}
-#endif
 	if (soc < chip->low_soc_calc_threshold
 			|| wake_lock_active(&chip->low_voltage_wake_lock))
 		schedule_delayed_work(&chip->calculate_soc_delayed_work,
