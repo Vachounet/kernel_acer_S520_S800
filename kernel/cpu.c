@@ -285,7 +285,7 @@ int __ref cpu_down(unsigned int cpu)
 out:
 	cpu_maps_update_done();
 	return err;
-}
+o}
 EXPORT_SYMBOL(cpu_down);
 #endif /*CONFIG_HOTPLUG_CPU*/
 
