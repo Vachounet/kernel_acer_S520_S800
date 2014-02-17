@@ -1111,11 +1111,7 @@ static const int __init krait_needs_vmin(void)
 	case 0x511F04D0: /* KR28M2A20 */
 	case 0x511F04D1: /* KR28M2A21 */
 	case 0x510F06F0: /* KR28M4A10 */
-#if defined(CONFIG_ARCH_ACER_MSM8974)
-		return 0;
-#else
 		return 1;
-#endif
 	default:
 		return 0;
 	};
