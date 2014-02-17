@@ -161,22 +161,6 @@ ssize_t wake_lock_store(
 		goto bad_name;
 	}
 
-#if 0//efined(CONFIG_ARCH_ACER_MSM8974)
-	{
-		struct task_struct *parent;
-
-		if (current == NULL || current->nsproxy == NULL)
-			goto bad_name;
-
-		parent = find_task_by_vpid(current->tgid);
-		if (parent == NULL)
-			goto bad_name;
-
-		if (strcmp(parent->comm, "system_server") && strcmp(parent->comm, "sh"))
-			goto bad_name;
-	}
-#endif
-
 	if (debug_mask & DEBUG_ACCESS)
 		pr_info("wake_lock_store: %s, timeout %ld\n", l->name, timeout);
 
