@@ -40,28 +40,6 @@
 #include "acpuclock-krait.h"
 #include "avs.h"
 
-#if defined(CONFIG_ARCH_ACER_MSM8974)
-#define ACPU_MAX_FREQ					1958400
-#define ACPU_LIMITED_FREQ				960000
-#define ACPU_NO_TOUCH_FREQ			729600
-#define ACPU_EARLYSUSPEND_FREQ		300000
-#define RUN_QUEUE_MAX					10
-#define RUN_QUEUE_THRESHOLD			35
-#define SYSTEM_LOADING_POLLING_TIME	600
-#define DELAY_180_SECS					180
-extern unsigned int acer_show_run_queue_avg(void);
-extern int kernel_is_in_earlysuspend(void);
-extern int get_cpu_power_mode(void);  // 0)force disbled  1)force enabled  2)by battery
-extern int no_touch_event(void);
-extern int is_woken_by_pwr_key(void);
-extern int is_ignore_freq_limit(void);
-static int run_queue_avg[RUN_QUEUE_MAX];
-static int r_idx;
-static int battery_to_cpu_low_power_mode;
-static struct delayed_work loading_wq;
-static struct mutex work_queue_mutex;
-#endif
-
 /* MUX source selects. */
 #define PRI_SRC_SEL_SEC_SRC	0
 #define PRI_SRC_SEL_HFPLL	1
