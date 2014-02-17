@@ -285,17 +285,6 @@
 
 int sysctl_tcp_fin_timeout __read_mostly = TCP_FIN_TIMEOUT;
 
-#ifdef CONFIG_ARCH_ACER_MSM8974
-#include <linux/freezer.h>
-#include <linux/cred.h>
-extern int blacklist_debug;
-int get_cpu_power_mode(void);
-int kernel_is_in_earlysuspend(void);
-int pkgl_partial_search(const char *uid, int check_connection);
-int pkgl_set_disconnect(const char *uid);
-void anc_add(const char *uid);
-#endif
-
 struct percpu_counter tcp_orphan_count;
 EXPORT_SYMBOL_GPL(tcp_orphan_count);
 
@@ -942,52 +931,6 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	flags = msg->msg_flags;
 	timeo = sock_sndtimeo(sk, flags & MSG_DONTWAIT);
 
-#if defined(CONFIG_ARCH_ACER_MSM8974)
-	if (kernel_is_in_earlysuspend()) {
-		struct task_struct *parent;
-		char uid[16];
-
-		if (get_cpu_power_mode() == 0)
-			goto skip_check;
-
-		if (current == NULL || current->nsproxy == NULL)
-			goto skip_check;
-
-		parent = find_task_by_vpid(current->tgid);
-		if (parent == NULL)
-			goto skip_check;
-
-		sprintf(uid, "%d", current_uid());
-		anc_add(uid);
-
-		if (!pkgl_partial_search(uid, 0)) {
-			goto skip_check;
-		}
-
-		if (!parent->parent ||strcmp("zygote", parent->parent->comm))
-			goto skip_check;
-
-		if (blacklist_debug)
-			pr_info("[BlackList] SEND  pid=[%d]  ppid=[%d]  comm=[%s]  parent[%s]\r\n", current->pid, current->tgid, current->comm, parent->comm);
-		pkgl_set_disconnect(uid);
-		send_sig(SIGKILL, parent, 0);
-	}
-skip_check:
-if(0)	{
-		struct task_struct *parent;
-
-		if (current == NULL || current->nsproxy == NULL)
-			goto skip_check2;
-
-		parent = find_task_by_vpid(current->tgid);
-		if (parent == NULL)
-			goto skip_check2;
-
-		anc_add(parent->comm);
-	}
-skip_check2:
-#endif
-
 	/* Wait for a connection to finish. */
 	if ((1 << sk->sk_state) & ~(TCPF_ESTABLISHED | TCPF_CLOSE_WAIT))
 		if ((err = sk_stream_wait_connect(sk, &timeo)) != 0)
@@ -1491,52 +1434,6 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	err = -ENOTCONN;
 	if (sk->sk_state == TCP_LISTEN)
 		goto out;
-
-#if defined(CONFIG_ARCH_ACER_MSM8974)
-	if (kernel_is_in_earlysuspend()) {
-		struct task_struct *parent;
-		char uid[16];
-
-		if (get_cpu_power_mode() == 0)
-			goto skip_check;
-
-		if (current == NULL || current->nsproxy == NULL)
-			goto skip_check;
-
-		parent = find_task_by_vpid(current->tgid);
-		if (parent == NULL)
-			goto skip_check;
-
-		sprintf(uid, "%d", current_uid());
-		anc_add(uid);
-
-		if (!pkgl_partial_search(uid, 0)) {
-			goto skip_check;
-		}
-
-		if (!parent->parent ||strcmp("zygote", parent->parent->comm))
-			goto skip_check;
-
-		if (blacklist_debug)
-			pr_info("[BlackList] RECV  pid=[%d]  ppid=[%d]  comm=[%s]  parent[%s]\r\n", current->pid, current->tgid, current->comm, parent->comm);
-		pkgl_set_disconnect(uid);
-		send_sig(SIGKILL, parent, 0);
-	}
-skip_check:
-if(0)	{
-		struct task_struct *parent;
-
-		if (current == NULL || current->nsproxy == NULL)
-			goto skip_check2;
-
-		parent = find_task_by_vpid(current->tgid);
-		if (parent == NULL)
-			goto skip_check2;
-
-		anc_add(parent->comm);
-	}
-skip_check2:
-#endif
 
 	timeo = sock_rcvtimeo(sk, nonblock);
 

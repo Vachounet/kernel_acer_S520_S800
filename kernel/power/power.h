@@ -329,12 +329,4 @@ ssize_t network_count_store(struct kobject *kobj, struct kobj_attribute *attr,
 ssize_t network_count_reset_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf);
 ssize_t network_count_reset_store(struct kobject *kobj, struct kobj_attribute *attr,
 			const char *buf, size_t n);
-ssize_t cur_state_show(struct kobject *kobj, struct kobj_attribute *attr,
-			char *buf);
-ssize_t cur_state_store(struct kobject *kobj, struct kobj_attribute *attr,
-			const char *buf, size_t n);
-ssize_t force_cpu_low_power_show(struct kobject *kobj, struct kobj_attribute *attr,
-			char *buf);
-ssize_t force_cpu_low_power_store(struct kobject *kobj, struct kobj_attribute *attr,
-			const char *buf, size_t n);
 #endif
