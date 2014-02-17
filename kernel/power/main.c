@@ -638,8 +638,6 @@ power_attr(black_list_removed);
 power_attr(black_list_search);
 power_attr(network_count);
 power_attr(network_count_reset);
-power_attr(cur_state);
-power_attr(force_cpu_low_power);
 #endif
 
 static struct attribute *g[] = {
@@ -651,8 +649,6 @@ static struct attribute *g[] = {
 	&black_list_search_attr.attr,
 	&network_count_attr.attr,
 	&network_count_reset_attr.attr,
-	&cur_state_attr.attr,
-	&force_cpu_low_power_attr.attr,
 #endif
 #ifdef CONFIG_PM_TRACE
 	&pm_trace_attr.attr,
