@@ -17,7 +17,6 @@
  *
  */
 
-#include <linux/earlysuspend.h>
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/cpufreq.h>
@@ -27,6 +26,7 @@
 #include <linux/cpumask.h>
 #include <linux/sched.h>
 #include <linux/suspend.h>
+#include <trace/events/power.h>
 #include <mach/socinfo.h>
 #include <mach/cpufreq.h>
 
@@ -98,9 +98,12 @@ static int set_cpu_freq(struct cpufreq_policy *policy, unsigned int new_freq)
 
 	cpufreq_notify_transition(&freqs, CPUFREQ_PRECHANGE);
 
+	trace_cpu_frequency_switch_start(freqs.old, freqs.new, policy->cpu);
 	ret = acpuclk_set_rate(policy->cpu, new_freq, SETRATE_CPUFREQ);
-	if (!ret)
+	if (!ret) {
+		trace_cpu_frequency_switch_end(policy->cpu);
 		cpufreq_notify_transition(&freqs, CPUFREQ_POSTCHANGE);
+	}
 
 	/* Restore priority after clock ramp-up */
 	if (freqs.new > freqs.old && saved_sched_policy >= 0) {
@@ -128,15 +131,6 @@ static int msm_cpufreq_target(struct cpufreq_policy *policy,
 	struct cpufreq_frequency_table *table;
 
 	struct cpufreq_work_struct *cpu_work = NULL;
-	cpumask_var_t mask;
-
-	if (!cpu_active(policy->cpu)) {
-		pr_info("cpufreq: cpu %d is not active.\n", policy->cpu);
-		return -ENODEV;
-	}
-
-	if (!alloc_cpumask_var(&mask, GFP_KERNEL))
-		return -ENOMEM;
 
 	mutex_lock(&per_cpu(cpufreq_suspend, policy->cpu).suspend_mutex);
 
@@ -164,22 +158,14 @@ static int msm_cpufreq_target(struct cpufreq_policy *policy,
 	cpu_work->frequency = table[index].frequency;
 	cpu_work->status = -ENODEV;
 
-	cpumask_clear(mask);
-	cpumask_set_cpu(policy->cpu, mask);
-	if (cpumask_equal(mask, &current->cpus_allowed)) {
-		ret = set_cpu_freq(cpu_work->policy, cpu_work->frequency);
-		goto done;
-	} else {
-		cancel_work_sync(&cpu_work->work);
-		INIT_COMPLETION(cpu_work->complete);
-		queue_work_on(policy->cpu, msm_cpufreq_wq, &cpu_work->work);
-		wait_for_completion(&cpu_work->complete);
-	}
+	cancel_work_sync(&cpu_work->work);
+	INIT_COMPLETION(cpu_work->complete);
+	queue_work_on(policy->cpu, msm_cpufreq_wq, &cpu_work->work);
+	wait_for_completion(&cpu_work->complete);
 
 	ret = cpu_work->status;
 
 done:
-	free_cpumask_var(mask);
 	mutex_unlock(&per_cpu(cpufreq_suspend, policy->cpu).suspend_mutex);
 	return ret;
 }
@@ -283,10 +269,16 @@ static int __cpuinit msm_cpufreq_init(struct cpufreq_policy *policy)
 		policy->cpuinfo.max_freq = CONFIG_MSM_CPU_FREQ_MAX;
 #endif
 	}
+/*
 #ifdef CONFIG_MSM_CPU_FREQ_SET_MIN_MAX
 	policy->min = CONFIG_MSM_CPU_FREQ_MIN;
 	policy->max = CONFIG_MSM_CPU_FREQ_MAX;
 #endif
+*/
+
+	// Predefine max/min frequencies used for device boot
+	policy->max = 2150400;
+	policy->min = 300000;
 
 	cur_freq = acpuclk_get_rate(policy->cpu);
 	if (cpufreq_frequency_table_target(policy, table, cur_freq,
@@ -297,23 +289,6 @@ static int __cpuinit msm_cpufreq_init(struct cpufreq_policy *policy)
 				policy->cpu, cur_freq);
 		return -EINVAL;
 	}
-#ifdef CONFIG_ARCH_ACER_MSM8974
-	if (cur_freq != table[index].frequency &&
-		SOCINFO_VERSION_MAJOR(socinfo_get_version()) != 1) {
-#else
-	if (cur_freq != table[index].frequency) {
-#endif
-		int ret = 0;
-		ret = acpuclk_set_rate(policy->cpu, table[index].frequency,
-				SETRATE_CPUFREQ);
-		if (ret)
-			return ret;
-		pr_info("cpufreq: cpu%d init at %d switching to %d\n",
-				policy->cpu, cur_freq, table[index].frequency);
-		cur_freq = table[index].frequency;
-	}
-
-	policy->cur = cur_freq;
 	/*
 	 * Call set_cpu_freq unconditionally so that when cpu is set to
 	 * online, frequency limit will always be updated.
@@ -322,8 +297,8 @@ static int __cpuinit msm_cpufreq_init(struct cpufreq_policy *policy)
 	if (ret)
 		return ret;
 	pr_debug("cpufreq: cpu%d init at %d switching to %d\n",
-			policy->cpu, cur_freq, table[index].frequency);
-	policy->cur = table[index].frequency;
+			policy->cpu, cur_freq, policy->max);
+	policy->cur = policy->max;
 
 	policy->cpuinfo.transition_latency =
 		acpuclk_get_switch_time() * NSEC_PER_USEC;
@@ -337,6 +312,7 @@ static int __cpuinit msm_cpufreq_init(struct cpufreq_policy *policy)
 
 static int __cpuinit msm_cpufreq_cpu_callback(struct notifier_block *nfb,
 		unsigned long action, void *hcpu)
+
 {
 	unsigned int cpu = (unsigned long)hcpu;
 
@@ -425,39 +401,5 @@ static int __init msm_cpufreq_register(void)
 
 	return cpufreq_register_driver(&msm_cpufreq_driver);
 }
-
-#if defined(CONFIG_ARCH_ACER_MSM8974)
-static int ignore_freq_limit;
-int is_ignore_freq_limit(void)
-{
-	return ignore_freq_limit;
-}
-void set_max_cpu_freq(void){
-	int ret;
-	int cpu, i, core = 1;
-	struct cpufreq_freqs freqs;
-
-	for_each_possible_cpu(cpu) {
-		per_cpu(cpufreq_suspend, cpu).device_suspended = 0;
-	}
-
-	for(i=0; i<core; i++){
-		if (cpu_online(i)) {
-			mutex_lock(&per_cpu(cpufreq_suspend, i).suspend_mutex);
-			ignore_freq_limit = 1;
-			freqs.old = acpuclk_get_rate(i);
-			freqs.new = 2150400;
-			freqs.cpu = i;
-			cpufreq_notify_transition(&freqs, CPUFREQ_PRECHANGE);
-			ret = acpuclk_set_rate(i, freqs.new, SETRATE_CPUFREQ);
-			if (!ret)
-				cpufreq_notify_transition(&freqs, CPUFREQ_POSTCHANGE);
-			printk(KERN_INFO "cpu%d, get freq to %lu\n", i, acpuclk_get_rate(i));
-			ignore_freq_limit = 0;
-			mutex_unlock(&per_cpu(cpufreq_suspend, i).suspend_mutex);
-		}
-	}
-}
-#endif
 
 device_initcall(msm_cpufreq_register);
