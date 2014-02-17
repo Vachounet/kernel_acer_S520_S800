@@ -276,11 +276,6 @@ static inline void log_cpu_event(void) { }
 static inline int procfs_event_log_init(void) { return 0; }
 #endif
 
-#if defined(CONFIG_ARCH_ACER_MSM8974)
-void acer_set_cpu_freq_table(int type);
-#endif
-
-
 static irqreturn_t msm_l1_erp_irq(int irq, void *dev_id)
 {
 	struct msm_l1_err_stats *l1_stats = dev_id;
@@ -295,11 +290,7 @@ static irqreturn_t msm_l1_erp_irq(int irq, void *dev_id)
 		pr_alert("\tCESR      = 0x%08x\n", cesr);
 		pr_alert("\tCPU speed = %lu\n", acpuclk_get_rate(cpu));
 		pr_alert("\tMIDR      = 0x%08x\n", read_cpuid_id());
-#if defined(CONFIG_ARCH_ACER_MSM8974)
-		acer_set_cpu_freq_table(1);
-#else
 		msm_erp_dump_regions();
-#endif
 	}
 
 	if (cesr & CESR_DCTPE) {
