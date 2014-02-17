@@ -89,20 +89,6 @@ int sysctl_tcp_tw_reuse __read_mostly;
 int sysctl_tcp_low_latency __read_mostly;
 EXPORT_SYMBOL(sysctl_tcp_low_latency);
 
-#if defined(CONFIG_ARCH_ACER_MSM8974)
-#include <asm/uaccess.h>
-#include <linux/sched.h>
-#include <linux/file.h>
-#include <linux/string.h>
-#include <linux/freezer.h>
-#include <linux/cred.h>
-extern int blacklist_debug;
-int kernel_is_in_earlysuspend(void);
-int pkgl_partial_search(const char *uid, int check_connection);
-int pkgl_set_disconnect(const char *uid);
-int pkgl_query_disconnect(const char *uid);
-int get_cpu_power_mode(void);
-#endif
 
 #ifdef CONFIG_TCP_MD5SIG
 static int tcp_v4_md5_hash_hdr(char *md5_hash, const struct tcp_md5sig_key *key,
@@ -179,46 +165,6 @@ int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 			return -EINVAL;
 		nexthop = inet_opt->opt.faddr;
 	}
-
-#if defined(CONFIG_ARCH_ACER_MSM8974)
-{
-	int app_in_background = 0;
-
-	if (kernel_is_in_earlysuspend() ||
-		(!kernel_is_in_earlysuspend() && app_in_background == 1)) {
-		struct task_struct *parent;
-		char uid[16];
-
-		if (get_cpu_power_mode() == 0)
-			goto skip_check;
-
-		if (current == NULL || current->nsproxy == NULL)
-			goto skip_check;
-
-		parent = find_task_by_vpid(current->tgid);
-		if (parent == NULL)
-			goto skip_check;
-
-		sprintf(uid, "%d", current_uid());
-		if (!pkgl_partial_search(uid, 1)) {
-			goto skip_check;
-		}
-
-		if (blacklist_debug)
-			pr_info("[BlackList] CONNET  pid=[%d]  ppid=[%d]  policy=%d  comm=[%s]  parent[%s]\r\n", current->pid, current->tgid, current->policy,
-				current->comm, parent->comm);
-		if (0&&pkgl_query_disconnect(uid))
-			return -ENETUNREACH;
-		else {
-			pkgl_set_disconnect(uid);
-			send_sig(SIGKILL, parent, 0);
-		}
-
-	}
-skip_check:
-	;
-}
-#endif
 
 	orig_sport = inet->inet_sport;
 	orig_dport = usin->sin_port;
@@ -1813,11 +1759,6 @@ bad_packet:
 		TCP_INC_STATS_BH(net, TCP_MIB_INERRS);
 	} else {
 		tcp_v4_send_reset(NULL, skb);
-#if defined(CONFIG_ARCH_ACER_MSM8974)
-		if (th->syn == 1) {
-			NET_INC_STATS_BH(net, LINUX_MIB_TCPRESET);
-		}
-#endif
 	}
 
 discard_it:
