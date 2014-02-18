@@ -34,7 +34,7 @@
  */
 
 #define DEF_FREQUENCY_DOWN_DIFFERENTIAL		(10)
-#define DEF_FREQUENCY_UP_THRESHOLD		(80)
+#define DEF_FREQUENCY_UP_THRESHOLD		(95)
 #define DEF_SAMPLING_DOWN_FACTOR		(1)
 #define MAX_SAMPLING_DOWN_FACTOR		(100000)
 #define MICRO_FREQUENCY_DOWN_DIFFERENTIAL	(3)
@@ -43,10 +43,6 @@
 #define MIN_FREQUENCY_UP_THRESHOLD		(11)
 #define MAX_FREQUENCY_UP_THRESHOLD		(100)
 #define MIN_FREQUENCY_DOWN_DIFFERENTIAL		(1)
-
-#if defined(CONFIG_ARCH_ACER_MSM8974)
-#define DEF_INPUT_EVENT_FREQ			(1497600)
-#endif
 
 /*
  * The polling frequency of this governor depends on the capability of
@@ -134,11 +130,6 @@ struct dbs_work_struct {
 };
 
 static DEFINE_PER_CPU(struct dbs_work_struct, dbs_refresh_work);
-
-#if defined(CONFIG_ARCH_ACER_MSM8974)
-static DEFINE_PER_CPU(struct work_struct, dbs_cpu_min_freq_work);
-static DEFINE_PER_CPU(struct work_struct, dbs_cpu_max_freq_work);
-#endif
 
 static struct dbs_tuners {
 	unsigned int sampling_rate;
@@ -621,9 +612,6 @@ static ssize_t store_powersave_bias(struct kobject *a, struct attribute *b,
 				if (dbs_info->cur_policy) {
 					/* restart dbs timer */
 					dbs_timer_init(dbs_info);
-					/* Enable frequency synchronization
-					 * of CPUs */
-					atomic_set(&dbs_info->sync_enabled, 1);
 				}
 skip_this_cpu:
 				unlock_policy_rwsem_write(cpu);
@@ -654,10 +642,6 @@ skip_this_cpu:
 			if (dbs_info->cur_policy) {
 				/* cpu using ondemand, cancel dbs timer */
 				dbs_timer_exit(dbs_info);
-				/* Disable frequency synchronization of
-				 * CPUs to avoid re-queueing of work from
-				 * sync_thread */
-				atomic_set(&dbs_info->sync_enabled, 0);
 
 				mutex_lock(&dbs_info->timer_mutex);
 				ondemand_powersave_bias_setspeed(
@@ -1009,87 +993,12 @@ static int should_io_be_busy(void)
 	return 0;
 }
 
-#if defined(CONFIG_ARCH_ACER_MSM8974)
-static void do_dbs_set_min_freq(struct work_struct *unused)
-{
-	struct cpufreq_policy *policy;
-	struct cpu_dbs_info_s *this_dbs_info;
-	unsigned int cpu = smp_processor_id();
-
-	get_online_cpus();
-
-	if (lock_policy_rwsem_write(cpu) < 0)
-		goto bail_acq_sema_failed;
-
-	this_dbs_info = &per_cpu(od_cpu_dbs_info, cpu);
-	policy = this_dbs_info->cur_policy;
-	if (!policy) {
-		/* CPU not using ondemand governor */
-		goto bail_incorrect_governor;
-	}
-
-	if (policy->cur > policy->min) {
-		policy->cur = policy->min;
-
-		__cpufreq_driver_target(policy, policy->min,
-					CPUFREQ_RELATION_L);
-		this_dbs_info->prev_cpu_idle = get_cpu_idle_time(cpu,
-				&this_dbs_info->prev_cpu_wall);
-	}
-
-bail_incorrect_governor:
-	unlock_policy_rwsem_write(cpu);
-
-bail_acq_sema_failed:
-	put_online_cpus();
-	return;
-}
-
-static void do_dbs_set_max_freq(struct work_struct *unused)
-{
-	struct cpufreq_policy *policy;
-	struct cpu_dbs_info_s *this_dbs_info;
-	unsigned int cpu = smp_processor_id();
-
-	get_online_cpus();
-
-	if (lock_policy_rwsem_write(cpu) < 0)
-		goto bail_acq_sema_failed;
-
-	this_dbs_info = &per_cpu(od_cpu_dbs_info, cpu);
-	policy = this_dbs_info->cur_policy;
-	if (!policy) {
-		/* CPU not using ondemand governor */
-		goto bail_incorrect_governor;
-	}
-
-	if (policy->cur < policy->max) {
-		policy->cur = policy->max;
-
-		__cpufreq_driver_target(policy, policy->max,
-					CPUFREQ_RELATION_L);
-		this_dbs_info->prev_cpu_idle = get_cpu_idle_time(cpu,
-				&this_dbs_info->prev_cpu_wall);
-	}
-
-bail_incorrect_governor:
-	unlock_policy_rwsem_write(cpu);
-
-bail_acq_sema_failed:
-	put_online_cpus();
-	return;
-}
-#endif
-
 static void dbs_refresh_callback(struct work_struct *work)
 {
 	struct cpufreq_policy *policy;
 	struct cpu_dbs_info_s *this_dbs_info;
 	struct dbs_work_struct *dbs_work;
 	unsigned int cpu;
-#if defined(CONFIG_ARCH_ACER_MSM8974)
-	unsigned int input_freq;
-#endif
 
 	dbs_work = container_of(work, struct dbs_work_struct, work);
 	cpu = dbs_work->cpu;
@@ -1106,25 +1015,6 @@ static void dbs_refresh_callback(struct work_struct *work)
 		goto bail_incorrect_governor;
 	}
 
-#if defined(CONFIG_ARCH_ACER_MSM8974)
-	if (policy->max < DEF_INPUT_EVENT_FREQ)
-		input_freq = policy->max;
-	else
-		input_freq = DEF_INPUT_EVENT_FREQ;
-
-	if (policy->cur < input_freq) {
-		/*
-		 * Arch specific cpufreq driver may fail.
-		 * Don't update governor frequency upon failure.
-		 */
-		if (__cpufreq_driver_target(policy, input_freq,
-					CPUFREQ_RELATION_L) >= 0)
-			policy->cur = input_freq;
-
-		this_dbs_info->prev_cpu_idle = get_cpu_idle_time(cpu,
-				&this_dbs_info->prev_cpu_wall);
-	}
-#else
 	if (policy->cur < policy->max) {
 		/*
 		 * Arch specific cpufreq driver may fail.
@@ -1138,7 +1028,6 @@ static void dbs_refresh_callback(struct work_struct *work)
 				&this_dbs_info->prev_cpu_wall);
 	}
 
-#endif
 bail_incorrect_governor:
 	unlock_policy_rwsem_write(cpu);
 
@@ -1188,6 +1077,12 @@ static int dbs_sync_thread(void *data)
 
 		get_online_cpus();
 
+		if (!atomic_read(&this_dbs_info->sync_enabled)) {
+			atomic_set(&this_dbs_info->src_sync_cpu, -1);
+			put_online_cpus();
+			continue;
+		}
+
 		src_cpu = atomic_read(&this_dbs_info->src_sync_cpu);
 		src_dbs_info = &per_cpu(od_cpu_dbs_info, src_cpu);
 		if (src_dbs_info != NULL &&
@@ -1201,13 +1096,6 @@ static int dbs_sync_thread(void *data)
 
 		if (lock_policy_rwsem_write(cpu) < 0)
 			goto bail_acq_sema_failed;
-
-		if (!atomic_read(&this_dbs_info->sync_enabled)) {
-			atomic_set(&this_dbs_info->src_sync_cpu, -1);
-			put_online_cpus();
-			unlock_policy_rwsem_write(cpu);
-			continue;
-		}
 
 		policy = this_dbs_info->cur_policy;
 		if (!policy) {
@@ -1236,8 +1124,8 @@ static int dbs_sync_thread(void *data)
 
 			/* reschedule the next ondemand sample */
 			mutex_lock(&this_dbs_info->timer_mutex);
-			queue_delayed_work_on(cpu, dbs_wq,
-					      &this_dbs_info->work, delay);
+			schedule_delayed_work_on(cpu, &this_dbs_info->work,
+						 delay);
 			mutex_unlock(&this_dbs_info->timer_mutex);
 		}
 
@@ -1346,8 +1234,7 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 						kcpustat_cpu(j).cpustat[CPUTIME_NICE];
 			set_cpus_allowed(j_dbs_info->sync_thread,
 					 *cpumask_of(j));
-			if (!dbs_tuners_ins.powersave_bias)
-				atomic_set(&j_dbs_info->sync_enabled, 1);
+			atomic_set(&j_dbs_info->sync_enabled, 1);
 		}
 		this_dbs_info->cpu = cpu;
 		this_dbs_info->rate_mult = 1;
@@ -1485,10 +1372,6 @@ static int __init cpufreq_gov_dbs_init(void)
 
 		mutex_init(&this_dbs_info->timer_mutex);
 		INIT_WORK(&dbs_work->work, dbs_refresh_callback);
-#if defined(CONFIG_ARCH_ACER_MSM8974)
-		INIT_WORK(&per_cpu(dbs_cpu_min_freq_work, i), do_dbs_set_min_freq);
-		INIT_WORK(&per_cpu(dbs_cpu_max_freq_work, i), do_dbs_set_max_freq);
-#endif
 		dbs_work->cpu = i;
 
 		atomic_set(&this_dbs_info->src_sync_cpu, -1);
@@ -1516,27 +1399,6 @@ static void __exit cpufreq_gov_dbs_exit(void)
 	destroy_workqueue(dbs_wq);
 }
 
-#if defined(CONFIG_ARCH_ACER_MSM8974)
-void dbs_set_min_freq(void)
-{
-	int i;
-
-	for_each_online_cpu(i) {
-		queue_work_on(i, dbs_wq, &per_cpu(dbs_cpu_min_freq_work, i));
-	}
-}
-EXPORT_SYMBOL(dbs_set_min_freq);
-
-void dbs_set_max_freq(void)
-{
-	int i;
-
-	for_each_online_cpu(i) {
-		queue_work_on(i, dbs_wq, &per_cpu(dbs_cpu_max_freq_work, i));
-	}
-}
-EXPORT_SYMBOL(dbs_set_max_freq);
-#endif
 
 MODULE_AUTHOR("Venkatesh Pallipadi <venkatesh.pallipadi@intel.com>");
 MODULE_AUTHOR("Alexey Starikovskiy <alexey.y.starikovskiy@intel.com>");

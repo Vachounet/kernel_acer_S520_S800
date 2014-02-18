@@ -435,8 +435,12 @@ static ssize_t store_##file_name					\
 	if (ret != 1)							\
 		return -EINVAL;						\
 									\
+	ret = cpufreq_driver->verify(&new_policy);			\
+	if (ret)							\
+		pr_err("cpufreq: Frequency verification failed\n");	\
+									\
+	policy->user_policy.object = new_policy.object;			\
 	ret = __cpufreq_set_policy(policy, &new_policy);		\
-	policy->user_policy.object = policy->object;			\
 									\
 	return ret ? ret : count;					\
 }
@@ -626,7 +630,7 @@ extern void acpuclk_set_vdd(unsigned acpu_khz, int vdd);
 
 static ssize_t show_vdd_levels(struct kobject *a, struct attribute *b, char *buf) {
 	return acpuclk_get_vdd_levels_str(buf);
-	}
+}
 
 static ssize_t store_vdd_levels(struct kobject *a, struct attribute *b, const char *buf, size_t count) {
 
@@ -1600,11 +1604,6 @@ int __cpufreq_driver_target(struct cpufreq_policy *policy,
 	if (cpu_online(policy->cpu) && cpufreq_driver->target)
 		retval = cpufreq_driver->target(policy, target_freq, relation);
 
-#ifdef CONFIG_ARCH_ACER_MSM8974
-	if (cpu_online(policy->cpu) && cpufreq_driver->get)
-		policy->cur = cpufreq_driver->get(policy->cpu);
-#endif
-
 	return retval;
 }
 EXPORT_SYMBOL_GPL(__cpufreq_driver_target);
@@ -2086,7 +2085,6 @@ static int __init cpufreq_core_init(void)
 	cpufreq_global_kobject = kobject_create_and_add("cpufreq", &cpu_subsys.dev_root->kobj);
 	BUG_ON(!cpufreq_global_kobject);
 	register_syscore_ops(&cpufreq_syscore_ops);
-
 #ifdef CONFIG_CPU_VOLTAGE_TABLE
 	rc = sysfs_create_group(cpufreq_global_kobject, &vddtbl_attr_group);
 #endif	/* CONFIG_CPU_VOLTAGE_TABLE */
