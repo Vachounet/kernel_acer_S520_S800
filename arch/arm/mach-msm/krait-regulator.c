@@ -31,7 +31,6 @@
 #include <linux/syscore_ops.h>
 #include <linux/cpu.h>
 #include <mach/msm_iomap.h>
-#include "krait-regulator-pmic.h"
 
 #include "spm.h"
 #include "pm.h"
@@ -308,7 +307,7 @@ static int set_krait_ldo_uv(struct krait_power_vreg *kvreg, int uV)
 
 	return 0;
 }
-#ifndef CONFIG_ARCH_MSM8974
+
 static int __krait_power_mdd_enable(struct krait_power_vreg *kvreg, bool on)
 {
 	if (on) {
@@ -326,7 +325,7 @@ static int __krait_power_mdd_enable(struct krait_power_vreg *kvreg, bool on)
 	}
 	return 0;
 }
-#endif
+
 #define COEFF2_UV_THRESHOLD 850000
 static int get_coeff2(int krait_uV, int phase_scaling_factor)
 {
@@ -444,7 +443,7 @@ static bool enable_phase_management(struct pmic_gang_vreg *pvreg)
 #define TWO_PHASE_COEFF		2000000
 
 #define PWM_SETTLING_TIME_US		50
-#define PHASE_SETTLING_TIME_US		100
+#define PHASE_SETTLING_TIME_US		50
 static unsigned int pmic_gang_set_phases(struct krait_power_vreg *from,
 				int coeff_total)
 {
@@ -464,18 +463,16 @@ static unsigned int pmic_gang_set_phases(struct krait_power_vreg *from,
 	}
 
 	/* First check if the coeff is low for PFM mode */
-	if (load_total <= pvreg->pfm_threshold
-			&& n_online == 1
-			&& krait_pmic_is_ready()) {
+	if (load_total <= pvreg->pfm_threshold && n_online == 1) {
 		if (!pvreg->pfm_mode) {
 			rc = msm_spm_enable_fts_lpm(PMIC_FTS_MODE_PFM);
 			if (rc) {
 				pr_err("%s PFM en failed load_t %d rc = %d\n",
 					from->name, load_total, rc);
 				return rc;
+			} else {
+				pvreg->pfm_mode = true;
 			}
-			krait_pmic_post_pfm_entry();
-			pvreg->pfm_mode = true;
 		}
 		return rc;
 	}
@@ -487,10 +484,10 @@ static unsigned int pmic_gang_set_phases(struct krait_power_vreg *from,
 			pr_err("%s PFM exit failed load %d rc = %d\n",
 				from->name, coeff_total, rc);
 			return rc;
+		} else {
+			pvreg->pfm_mode = false;
+			udelay(PWM_SETTLING_TIME_US);
 		}
-		pvreg->pfm_mode = false;
-		krait_pmic_post_pwm_entry();
-		udelay(PWM_SETTLING_TIME_US);
 	}
 
 	/* calculate phases */
@@ -949,9 +946,7 @@ static int krait_power_enable(struct regulator_dev *rdev)
 
 	mutex_lock(&pvreg->krait_power_vregs_lock);
 	pr_debug("enable %s\n", kvreg->name);
-#ifndef CONFIG_ARCH_MSM8974
 	__krait_power_mdd_enable(kvreg, true);
-#endif
 	kvreg->reg_en = true;
 	rc = _get_optimum_mode(rdev, kvreg->uV, kvreg->uV, kvreg->load);
 	if (rc < 0)
@@ -981,9 +976,7 @@ static int krait_power_disable(struct regulator_dev *rdev)
 		goto dis_err;
 
 	rc = _set_voltage(rdev, kvreg->uV, kvreg->uV);
-#ifndef CONFIG_ARCH_MSM8974
 	__krait_power_mdd_enable(kvreg, false);
-#endif
 dis_err:
 	mutex_unlock(&pvreg->krait_power_vregs_lock);
 	return rc;
@@ -1120,9 +1113,6 @@ static void kvreg_hw_init(struct krait_power_vreg *kvreg)
 			& readl_relaxed(kvreg->reg_base + CPU_PWR_CTL);
 	kvreg->online_at_probe
 		= online ? (WAIT_FOR_LOAD | WAIT_FOR_VOLTAGE) : 0x0;
-
-	if (online)
-		kvreg->force_bhs = false;
 }
 
 static void glb_init(void __iomem *apcs_gcc_base)
@@ -1279,7 +1269,6 @@ static int __devinit krait_power_probe(struct platform_device *pdev)
 	kvreg->ldo_threshold_uV = ldo_threshold_uV;
 	kvreg->ldo_delta_uV	= ldo_delta_uV;
 	kvreg->cpu_num		= cpu_num;
-	kvreg->force_bhs	= true;
 
 	platform_set_drvdata(pdev, kvreg);
 
@@ -1348,21 +1337,17 @@ static struct of_device_id krait_pdn_match_table[] = {
 
 static int boot_cpu_mdd_off(void)
 {
-#ifndef CONFIG_ARCH_MSM8974
 	struct krait_power_vreg *kvreg = per_cpu(krait_vregs, 0);
 
 	__krait_power_mdd_enable(kvreg, false);
-#endif
 	return 0;
 }
 
 static void boot_cpu_mdd_on(void)
 {
-#ifndef CONFIG_ARCH_MSM8974
 	struct krait_power_vreg *kvreg = per_cpu(krait_vregs, 0);
 
 	__krait_power_mdd_enable(kvreg, true);
-#endif
 }
 
 static struct syscore_ops boot_cpu_mdd_ops = {
